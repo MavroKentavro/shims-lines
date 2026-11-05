@@ -65,17 +65,26 @@ def render(md):
     for p in pieces:
         blocks = [b.strip() for b in re.split(r"\n\s*\n", p) if b.strip()]
         out.append('<article class="piece">' + "\n".join(block(b) for b in blocks) + "</article>")
-    return '\n<div class="orn" aria-hidden="true">⁂</div>\n'.join(out), pieces
+    return '\n<hr>\n'.join(out), pieces
 
 
-def nav(active):
-    items = "".join(
-        f'<a href="{s["slug"]}.html"{" class=on" if s["slug"]==active else ""}>{s["title"]}</a>'
-        for s in SECTIONS)
-    return f'<header class="top"><a class="brand" href="index.html">{SITE}</a><nav>{items}</nav></header>'
+DOC = '<svg class="doc" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.35 1.5h4.9l3.25 3.25v8.4c0 .75-.6 1.35-1.35 1.35h-6.8c-.75 0-1.35-.6-1.35-1.35V2.85c0-.75.6-1.35 1.35-1.35Z" fill="none" stroke="currentColor" stroke-width="1.1"/><path d="M9 1.7v3.3h3.3M5.5 8.2h5M5.5 10.6h5" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>'
+PEN = '<svg class="pen" viewBox="0 0 24 24" aria-hidden="true"><path d="M15.2 3.6a2.2 2.2 0 0 1 3.1 0l2.1 2.1a2.2 2.2 0 0 1 0 3.1L9.5 19.7l-5.6 1.1 1.1-5.6L15.2 3.6Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m13.5 5.3 5.2 5.2" stroke="currentColor" stroke-width="1.6"/></svg>'
 
 
-def page(title, body, active=None, desc=INTRO):
+def crumbs(trail):
+    parts = ['<a href="index.html">' + PEN.replace('class="pen"','class="pen sm"') + SITE + '</a>']
+    for href, title in trail:
+        parts.append(f'<a href="{href}">{title}</a>' if href else f'<span>{title}</span>')
+    return '<header class="top">' + '<span class="sl">/</span>'.join(parts) + '</header>'
+
+
+def pagelink(href, title, sub=None):
+    s2 = f' <span class="g">— {sub}</span>' if sub else ''
+    return f'<a class="pagelink" href="{href}">{DOC}<span class="pl">{title}</span>{s2}</a>'
+
+
+def page(title, body, trail=(), desc=INTRO):
     full = f"{title} — {SITE}" if title != SITE else SITE
     return f"""<!doctype html>
 <html lang="ru">
@@ -87,18 +96,14 @@ def page(title, body, active=None, desc=INTRO):
 <meta property="og:title" content="{html.escape(full)}">
 <meta property="og:description" content="{html.escape(desc[:180])}">
 <meta property="og:type" content="website">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✒</text></svg>">
 </head>
 <body>
-{nav(active)}
+{crumbs(trail)}
 <main>
 {body}
 </main>
-<footer class="foot">© Алексей Шимульский</footer>
 </body>
 </html>"""
 
@@ -134,35 +139,25 @@ def main():
         md = (C / s["file"]).read_text()
         body, pieces = render(md)
         counts[s["slug"]] = len(pieces)
-        toc = ""
-        if s["slug"] == "places":
-            heads = re.findall(r"^## (.+)$", md, flags=re.M)
-            toc = '<ul class="toc">' + "".join(f'<li><a href="#{slugify(h)}">{h}</a></li>' for h in heads) + "</ul>"
-        head = f'<div class="sec-head"><h1>{s["title"]}</h1><p class="ru">{s["ru"]}</p>{toc}</div>'
-        (OUT / f'{s["slug"]}.html').write_text(page(s["title"], head + body + prevnext(s["slug"]), s["slug"]))
+        head = f'<h1 class="title">{s["title"]}</h1>'
+        (OUT / f'{s["slug"]}.html').write_text(page(s["title"], head + body, [(None, s["title"])]))
 
     # long index + pages
     items = ""
     for t in LONG:
         md = (C / t["file"]).read_text()
         body, _ = render(md)
-        sub = f'<p class="sub">{t["sub"]}</p>' if t["sub"] else ""
-        head = f'<div class="sec-head long-head"><a class="back" href="long.html">← Long</a><h1>{t["title"]}</h1>{sub}<p class="by">Алексей Шимульский</p></div>'
-        (OUT / f'{t["slug"]}.html').write_text(page(t["title"], head + body, "long", first_line(md)))
-        items += f'<li><a href="{t["slug"]}.html"><span class="t">{t["title"]}</span>{"<span class=s>"+t["sub"]+"</span>" if t["sub"] else ""}<span class="ex">{html.escape(first_line(md))}</span></a></li>'
+        sub = f'<p class="g sub"><i>{t["sub"]}</i></p>' if t["sub"] else ""
+        head = f'<h1 class="title">{t["title"]}</h1>{sub}<p class="g by">Алексей Шимульский</p>'
+        (OUT / f'{t["slug"]}.html').write_text(page(t["title"], head + body, [("long.html", "Long"), (None, t["title"])], first_line(md)))
+        items += pagelink(f'{t["slug"]}.html', t["title"])
     counts["long"] = len(LONG)
-    head = '<div class="sec-head"><h1>Long</h1><p class="ru">Длинное</p></div>'
-    (OUT / "long.html").write_text(page("Long", head + f'<ul class="longlist">{items}</ul>' + prevnext("long"), "long"))
+    head = '<h1 class="title">Long</h1>'
+    (OUT / "long.html").write_text(page("Long", head + items, [(None, "Long")]))
 
     # index
-    def plural(n):
-        if n % 10 == 1 and n % 100 != 11: return "текст"
-        if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14: return "текста"
-        return "текстов"
-    secs = "".join(
-        f'<li><a href="{s["slug"]}.html"><span class="t">{s["title"]}</span><span class="ru">{s["ru"]}</span><span class="n">{counts[s["slug"]]} {plural(counts[s["slug"]])}</span></a></li>'
-        for s in SECTIONS)
-    body = f'<section class="hero"><h1>{SITE}</h1><p class="intro">{INTRO}</p></section><ul class="sections">{secs}</ul>'
+    secs = "".join(pagelink(f'{s["slug"]}.html', s["title"]) for s in SECTIONS)
+    body = f'<div class="icon">{PEN}</div><h1 class="title">{SITE}</h1><p>{INTRO}</p><p class="gap"></p>{secs}'
     (OUT / "index.html").write_text(page(SITE, body))
     print("built", sorted(os.listdir(OUT)), counts)
 
